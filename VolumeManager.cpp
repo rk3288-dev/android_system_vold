@@ -52,9 +52,10 @@
 #include "Process.h"
 #include "Asec.h"
 #include "cryptfs.h"
+#define NETLINK_DEBUG 1
 
-#define MASS_STORAGE_FILE_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
-
+#define MASS_STORAGE_FLASH_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun/file"
+#define MASS_STORAGE_SDCARD_PATH  "/sys/class/android_usb/android0/f_mass_storage/lun1/file"
 #define ROUND_UP_POWER_OF_2(number, po2) (((!!(number & ((1U << po2) - 1))) << po2)\
                                          + (number & (~((1U << po2) - 1))))
 
@@ -269,18 +270,21 @@ int VolumeManager::listVolumes(SocketClient *cli, bool broadcast) {
         asprintf(&buffer, "%s %s %d",
                  (*i)->getLabel(), (*i)->getFuseMountpoint(),
                  (*i)->getState());
+		SLOGD("listVolumes :%s",buffer);
         cli->sendMsg(ResponseCode::VolumeListResult, buffer, false);
         free(buffer);
         if (broadcast) {
             if((*i)->getUuid()) {
                 snprintf(msg, sizeof(msg), "%s %s \"%s\"", (*i)->getLabel(),
                     (*i)->getFuseMountpoint(), (*i)->getUuid());
+				SLOGD("listVolumes broadcast getUuid:%s",buffer);
                 mBroadcaster->sendBroadcast(ResponseCode::VolumeUuidChange,
                     msg, false);
             }
             if((*i)->getUserLabel()) {
                 snprintf(msg, sizeof(msg), "%s %s \"%s\"", (*i)->getLabel(),
                     (*i)->getFuseMountpoint(), (*i)->getUserLabel());
+				SLOGD("listVolumes broadcast getUserLabel:%s",buffer);				
                 mBroadcaster->sendBroadcast(ResponseCode::VolumeUserLabelChange,
                     msg, false);
             }
@@ -1461,6 +1465,7 @@ int VolumeManager::mountVolume(const char *label) {
         errno = ENOENT;
         return -1;
     }
+	SLOGD(" volume status = %d----------------------", v->getState());
 
     return v->mountVol();
 }
@@ -1583,10 +1588,24 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
         return -1;
     }
 
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
-    }
+	const char* temp=getenv("EXTERNAL_STORAGE_FLASH");
+	SLOGI("EXTERNAL_STORAGE_FLASH is %s",temp);
+	if(!strcmp(label,temp)){
+		SLOGI("share flash");
+    	if ((fd = open(MASS_STORAGE_FLASH_PATH, O_WRONLY)) < 0) {
+        	SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+        	return -1;
+    	}
+	}
+	else
+	{
+		SLOGI("share sdcard");
+		if ((fd = open(MASS_STORAGE_SDCARD_PATH, O_WRONLY)) < 0) {
+				SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+				return -1;
+		}
+	}
+
 
     if (write(fd, nodepath, strlen(nodepath)) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
@@ -1599,6 +1618,7 @@ int VolumeManager::shareVolume(const char *label, const char *method) {
     if (mUmsSharingCount++ == 0) {
         FILE* fp;
         mSavedDirtyRatio = -1; // in case we fail
+        mUmsDirtyRatio = 5; // use 0 on linux 3.x would cause a vfs_write timeout during ums copying
         if ((fp = fopen("/proc/sys/vm/dirty_ratio", "r+"))) {
             char line[16];
             if (fgets(line, sizeof(line), fp) && sscanf(line, "%d", &mSavedDirtyRatio)) {
@@ -1633,11 +1653,23 @@ int VolumeManager::unshareVolume(const char *label, const char *method) {
     }
 
     int fd;
-    if ((fd = open(MASS_STORAGE_FILE_PATH, O_WRONLY)) < 0) {
-        SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
-        return -1;
-    }
-
+  const char* temp=getenv("EXTERNAL_STORAGE_FLASH");
+	SLOGI("EXTERNAL_STORAGE_FLASH is %s",temp);
+	if(!strcmp(label,temp)){
+		SLOGI("unshare flash");
+		if ((fd = open(MASS_STORAGE_FLASH_PATH, O_WRONLY)) < 0) {
+			SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+			return -1;
+		}
+	}
+	else
+	{
+		SLOGI("unshare sdcard");
+		if ((fd = open(MASS_STORAGE_SDCARD_PATH, O_WRONLY)) < 0) {
+			SLOGE("Unable to open ums lunfile (%s)", strerror(errno));
+			return -1;
+		}
+	}
     char ch = 0;
     if (write(fd, &ch, 1) < 0) {
         SLOGE("Unable to write to ums lunfile (%s)", strerror(errno));
@@ -1706,13 +1738,23 @@ int VolumeManager::getDirectVolumeList(struct volume_info *vol_list) {
     return 0;
 }
 
-int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
+int VolumeManager::unmountVolume(const char *label, bool force, bool revert, bool badremove) {
     Volume *v = lookupVolume(label);
 
     if (!v) {
         errno = ENOENT;
         return -1;
     }
+
+#ifdef VOLD_BOX
+/* $_rbox_$_modify_$_huangyonglin: added for adding a way to unmount the mass storage */
+    if (strncmp(v->getLabel(),"usb_storage",strlen("usb_storage"))==0)
+    {
+        SLOGW("Attempt to unmount  %s ",label);
+        return v->unmountUdiskVol(label,force, badremove);
+    }
+/* $_rbox_$_modify_$ end */
+#endif
 
     if (v->getState() == Volume::State_NoMedia) {
         errno = ENODEV;
@@ -1726,9 +1768,12 @@ int VolumeManager::unmountVolume(const char *label, bool force, bool revert) {
         return UNMOUNT_NOT_MOUNTED_ERR;
     }
 
-    cleanupAsec(v, force);
+    int flags = v->getFlags();
+    bool providesAsec = ((flags & VOL_PROVIDES_ASEC) != 0);
+    if(providesAsec)
+        cleanupAsec(v, force);
 
-    return v->unmountVol(force, revert);
+    return v->unmountVol(force, revert, badremove);
 }
 
 extern "C" int vold_unmountAllAsecs(void) {

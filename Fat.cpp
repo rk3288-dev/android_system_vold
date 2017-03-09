@@ -169,11 +169,12 @@ int Fat::doMount(const char *fsPath, const char *mountPoint,
     return rc;
 }
 
-int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
+int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label) {
     int fd;
-    const char *args[11];
+    const char *args[13];
     int rc;
     int status;
+    int num_args;
 
     if (wipe) {
         Fat::wipe(fsPath, numSectors);
@@ -192,14 +193,33 @@ int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
         char tmp[32];
         snprintf(tmp, sizeof(tmp), "%u", numSectors);
         const char *size = tmp;
-        args[8] = "-s";
-        args[9] = size;
-        args[10] = fsPath;
-        rc = android_fork_execvp(ARRAY_SIZE(args), (char **)args, &status,
+        if (strlen(label) > 0) {
+             args[8] = "-L";
+             args[9] = label;
+             args[10] = "-s";
+             args[11] = size;
+             args[12] = fsPath;
+             num_args = 13;
+         } else {
+             args[8] = "-s";
+             args[9] = size;
+             args[10] = fsPath;
+             num_args = 11;
+         }
+        rc = android_fork_execvp(num_args, (char **)args, &status,
                 false, true);
     } else {
-        args[8] = fsPath;
-        rc = android_fork_execvp(9, (char **)args, &status, false,
+    	SLOGE("label : %s, fsPath : %s", label, fsPath);
+        if (strlen(label) > 0) {
+            args[8] = "-L";
+            args[9] = label;
+            args[10] = fsPath;
+            num_args = 11;
+        } else {
+            args[8] = fsPath;
+            num_args = 9;
+        }
+        rc = android_fork_execvp(num_args, (char **)args, &status, false,
                 true);
     }
 
@@ -228,6 +248,9 @@ int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
     return 0;
 }
 
+int Fat::format(const char *fsPath, unsigned int numSectors, bool wipe) {
+    return Fat::format(fsPath, numSectors, wipe, "");
+}
 void Fat::wipe(const char *fsPath, unsigned int numSectors) {
     int fd;
     unsigned long long range[2];

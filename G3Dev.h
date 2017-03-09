@@ -14,22 +14,25 @@
  * limitations under the License.
  */
 
-#ifndef _FAT_H
-#define _FAT_H
+#ifndef _G3DEV_H
+#define _G3DEV_H
 
-#include <unistd.h>
+#include <utils/List.h>
 
-class Fat {
+#include "Misc.h"
+class NetlinkEvent;
+
+class G3Dev : public Misc {
 public:
-    static int check(const char *fsPath);
-    static int doMount(const char *fsPath, const char *mountPoint,
-                       bool ro, bool remount, bool executable,
-                       int ownerUid, int ownerGid, int permMask,
-                       bool createLost);
-    static int format(const char *fsPath, unsigned int numSectors, bool wipe);
- static int format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label);
-private:
-    static void wipe(const char *fsPath, unsigned int numSectors);
+    G3Dev(MiscManager *mm);
+    virtual ~G3Dev();
+    NetlinkEvent *env;
+    int handleUsbEvent(NetlinkEvent *evt);
+    int handleScsiEvent(NetlinkEvent *evt);
+	int handleUsb();
+	int get_tty_id( char* tty_path, int *vid, int* pid);
+	int atox( const char * line, int f_base );
 };
 
 #endif
+

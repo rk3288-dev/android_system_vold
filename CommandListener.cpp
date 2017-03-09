@@ -40,7 +40,7 @@
 #include "cryptfs.h"
 #include "fstrim.h"
 
-#define DUMP_ARGS 0
+#define DUMP_ARGS 1
 
 CommandListener::CommandListener() :
                  FrameworkListener("vold", true) {
@@ -118,6 +118,9 @@ CommandListener::VolumeCmd::VolumeCmd() :
                  VoldCommand("volume") {
 }
 
+/*
+ * 1¡¢volume list broadcast  
+ */
 int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
                                            int argc, char **argv) {
     dumpArgs(argc, argv, -1);
@@ -162,6 +165,23 @@ int CommandListener::VolumeCmd::runCommand(SocketClient *cli,
             revert = true;
         }
         rc = vm->unmountVolume(argv[2], force, revert);
+    }else if (!strcmp(argv[1], "unmount_bad")) {
+        if (argc < 3 || argc > 4 ||
+           ((argc == 4 && strcmp(argv[3], "force")) &&
+            (argc == 4 && strcmp(argv[3], "force_and_revert")))) {
+            cli->sendMsg(ResponseCode::CommandSyntaxError, "Usage: volume unmount <path> [force|force_and_revert]", false);
+            return 0;
+        }
+
+        bool force = false;
+        bool revert = false;
+        if (argc >= 4 && !strcmp(argv[3], "force")) {
+            force = true;
+        } else if (argc >= 4 && !strcmp(argv[3], "force_and_revert")) {
+            force = true;
+            revert = true;
+        }
+        rc = vm->unmountVolume(argv[2], force, revert, true);
     } else if (!strcmp(argv[1], "format")) {
         if (argc < 3 || argc > 4 ||
             (argc == 4 && strcmp(argv[3], "wipe"))) {
@@ -294,7 +314,7 @@ int CommandListener::StorageCmd::runCommand(SocketClient *cli,
 CommandListener::AsecCmd::AsecCmd() :
                  VoldCommand("asec") {
 }
-
+/*asec list*/
 void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const char *directory) {
     DIR *d = opendir(directory);
 
@@ -325,6 +345,7 @@ void CommandListener::AsecCmd::listAsecsInDirectory(SocketClient *cli, const cha
             char id[255];
             memset(id, 0, sizeof(id));
             strlcpy(id, dent->d_name, name_len - 4);
+			SLOGD("AsecCmd id:%s",id);
             cli->sendMsg(ResponseCode::AsecListResult, id, false);
         }
     }
@@ -553,7 +574,10 @@ static int getType(const char* type)
         return -1;
     }
 }
-
+/* cryptfs getfield SystemLocale 
+ * cryptfs getpw
+ * cryptfs clearpw
+ */
 int CommandListener::CryptfsCmd::runCommand(SocketClient *cli,
                                                       int argc, char **argv) {
     if ((cli->getUid() != 0) && (cli->getUid() != AID_SYSTEM)) {

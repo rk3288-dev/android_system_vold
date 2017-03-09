@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (C) 2010 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,22 +14,18 @@
  * limitations under the License.
  */
 
-#ifndef _FAT_H
-#define _FAT_H
+#ifndef _NTFS_H
+#define _NTFS_H
 
 #include <unistd.h>
 
-class Fat {
+class Ntfs {
 public:
     static int check(const char *fsPath);
-    static int doMount(const char *fsPath, const char *mountPoint,
-                       bool ro, bool remount, bool executable,
-                       int ownerUid, int ownerGid, int permMask,
-                       bool createLost);
-    static int format(const char *fsPath, unsigned int numSectors, bool wipe);
- static int format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label);
-private:
-    static void wipe(const char *fsPath, unsigned int numSectors);
+	static int doMount(const char *fsPath, const char *mountPoint, bool ro, int ownerUid,int ownerGid);
+	static int unMount(const char *mountPoint);
+	static int format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label);
 };
 
 #endif
+

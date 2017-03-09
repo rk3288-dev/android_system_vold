@@ -14,22 +14,30 @@
  * limitations under the License.
  */
 
-#ifndef _FAT_H
-#define _FAT_H
+#ifndef _MISC_H
+#define _MISC_H
 
-#include <unistd.h>
+#include <utils/List.h>
 
-class Fat {
+class NetlinkEvent;
+class MiscManager;
+
+class Misc {
+protected:
+    MiscManager *mMm;
+    bool mDebug;
+
 public:
-    static int check(const char *fsPath);
-    static int doMount(const char *fsPath, const char *mountPoint,
-                       bool ro, bool remount, bool executable,
-                       int ownerUid, int ownerGid, int permMask,
-                       bool createLost);
-    static int format(const char *fsPath, unsigned int numSectors, bool wipe);
- static int format(const char *fsPath, unsigned int numSectors, bool wipe, const char *label);
-private:
-    static void wipe(const char *fsPath, unsigned int numSectors);
+    Misc(MiscManager *mm);
+    virtual ~Misc();
+
+    virtual int handleUsbEvent(NetlinkEvent *evt);
+    virtual int handleScsiEvent(NetlinkEvent *evt);
+	virtual int handleUsb();
+    void setDebug(bool enable);
 };
 
+typedef android::List<Misc *> MiscCollection;
+
 #endif
+
